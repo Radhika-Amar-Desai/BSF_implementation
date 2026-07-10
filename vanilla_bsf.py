@@ -1,6 +1,45 @@
 import torch
 import torch.nn as nn
 
+
+
+"""
+Overall Pipeline
+
+Image
+   ↓
+Foundation Model / Backbone (DINOv3, CNN, ViT, etc.)
+   ↓
+Feature Embedding x
+   ↓
+Linear Encoder
+   ↓
+Latent Code z
+   ↓
+Split into G blocks of size b
+   ↓
+Compute ||z_g||₂ for every block
+   ↓
+Keep Top-k blocks (Π_k)
+   ↓
+Block Sparse Code z_blocks
+   ↓
+Flatten
+   ↓
+Linear Decoder
+   ↓
+Reconstructed Embedding x̂
+
+
+Returned Outputs
+
+reconstruction : reconstructed embedding x̂
+z_blocks       : latent code grouped into blocks (contains the internal coordinates)
+z              : flattened latent code
+active_mask    : binary indicator of which concept blocks are active
+"""
+
+
 class Vanilla_BSF(nn.Module):
     """
     Vanilla Block Sparse Featurizer (BSF)
@@ -145,38 +184,22 @@ class Vanilla_BSF(nn.Module):
         }
 
 
-"""
-Overall Pipeline
 
-Image
-   ↓
-Foundation Model / Backbone (DINOv3, CNN, ViT, etc.)
-   ↓
-Feature Embedding x
-   ↓
-Linear Encoder
-   ↓
-Latent Code z
-   ↓
-Split into G blocks of size b
-   ↓
-Compute ||z_g||₂ for every block
-   ↓
-Keep Top-k blocks (Π_k)
-   ↓
-Block Sparse Code z_blocks
-   ↓
-Flatten
-   ↓
-Linear Decoder
-   ↓
-Reconstructed Embedding x̂
+def build_model(
+    input_dim=768,
+    num_blocks=4096,
+    block_size=4,
+):
+    latent_dim = num_blocks * block_size
 
+    encoder = nn.Linear(input_dim, latent_dim, bias=True)
+    decoder = nn.Linear(latent_dim, input_dim, bias=False)
 
-Returned Outputs
+    model = VanillaBSF(
+        encoder=encoder,
+        decoder=decoder,
+        block_size=block_size,
+    )
 
-reconstruction : reconstructed embedding x̂
-z_blocks       : latent code grouped into blocks (contains the internal coordinates)
-z              : flattened latent code
-active_mask    : binary indicator of which concept blocks are active
-"""
+    return model
+
