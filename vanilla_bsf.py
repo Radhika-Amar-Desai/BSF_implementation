@@ -2,204 +2,165 @@ import torch
 import torch.nn as nn
 
 
-
-"""
-Overall Pipeline
-
-Image
-   ↓
-Foundation Model / Backbone (DINOv3, CNN, ViT, etc.)
-   ↓
-Feature Embedding x
-   ↓
-Linear Encoder
-   ↓
-Latent Code z
-   ↓
-Split into G blocks of size b
-   ↓
-Compute ||z_g||₂ for every block
-   ↓
-Keep Top-k blocks (Π_k)
-   ↓
-Block Sparse Code z_blocks
-   ↓
-Flatten
-   ↓
-Linear Decoder
-   ↓
-Reconstructed Embedding x̂
-
-
-Returned Outputs
-
-reconstruction : reconstructed embedding x̂
-z_blocks       : latent code grouped into blocks (contains the internal coordinates)
-z              : flattened latent code
-active_mask    : binary indicator of which concept blocks are active
-"""
-
-
 class Vanilla_BSF(nn.Module):
     """
-    Vanilla Block Sparse Featurizer (BSF)
+    Vanilla Block Sparse Featurizer
 
-    Input:
-        x : (B, input_dim)
+    Input
+    -----
+    x : (B, input_dim)
 
-    Output:
-        reconstruction : (B, input_dim)
-        z_blocks       : (B, G, b)
-        active_mask    : (B, G)
+    Output
+    ------
+    reconstruction : (B,input_dim)
+    z_blocks       : (B,G,b)
+    z              : (B,latent_dim)
+    active_mask    : (B,G)
     """
 
-    def __init__(self, W, D, bias, b):
-        """
-        Parameters
-        ----------
-        W : Encoder (typically nn.Linear)
-        D : Decoder (typically nn.Linear)
-        bias : Encoder bias
-        b : Block size
-        """
+    def __init__(
+        self,
+        W,
+        D,
+        bias,
+        block_size,
+        top_k,
+    ):
+        super().__init__()
+
         self.W = W
         self.D = D
         self.bias = bias
-        self.b = b
 
-    def block_projection(self, z, k):
-        """
-        Implements Π_k from the paper.
+        self.block_size = block_size
+        self.top_k = top_k
 
-        Parameters
-        ----------
-        z : (B, latent_dim)
-            Encoder output
-
-        k : int
-            Number of active blocks
-
-        Returns
-        -------
-        z_blocks : (B, G, b)
-            Block-sparse latent code
-
-        active_mask : (B, G)
-            Binary mask indicating active blocks
-        """
+    def block_projection(self, z):
 
         B, latent_dim = z.shape
 
-        assert latent_dim % self.b == 0, \
-            "Latent dimension must be divisible by block size."
+        assert latent_dim % self.block_size == 0
 
-        G = latent_dim // self.b
+        num_blocks = latent_dim // self.block_size
 
-        # --------------------------------------------------
-        # Split latent vector into blocks
-        # Shape : (B, G, b)
-        # --------------------------------------------------
-        z_blocks = z.view(B, G, self.b)
+        #########################################
+        # (B,latent) -> (B,G,b)
+        #########################################
 
-        # --------------------------------------------------
-        # Compute L2 norm of every block
-        # Shape : (B, G)
-        # --------------------------------------------------
-        block_norms = torch.norm(z_blocks, p=2, dim=2)
+        z_blocks = z.view(B, num_blocks, self.block_size)
 
-        # --------------------------------------------------
-        # Top-k block selection
-        # Shape : (B, k)
-        # --------------------------------------------------
-        _, topk_indices = torch.topk(block_norms, k, dim=1)
+        #########################################
+        # Block norms
+        # (B,G)
+        #########################################
 
-        # --------------------------------------------------
-        # Binary mask of active blocks
-        # Shape : (B, G)
-        # --------------------------------------------------
+        block_norms = torch.norm(
+            z_blocks,
+            p=2,
+            dim=2,
+        )
+
+        #########################################
+        # Top-k blocks
+        #########################################
+
+        _, topk_indices = torch.topk(
+            block_norms,
+            self.top_k,
+            dim=1,
+        )
+
+        #########################################
+        # Binary support mask
+        #########################################
+
         active_mask = torch.zeros_like(block_norms)
 
-        active_mask.scatter_(1, topk_indices, 1)
+        active_mask.scatter_(
+            1,
+            topk_indices,
+            1,
+        )
 
-        # --------------------------------------------------
-        # Expand mask to block dimension
-        # Shape : (B, G, 1)
-        # --------------------------------------------------
-        expanded_mask = active_mask.unsqueeze(-1)
+        #########################################
+        # Expand to (B,G,1)
+        #########################################
 
-        # --------------------------------------------------
-        # Zero-out inactive blocks
-        # Shape : (B, G, b)
-        # --------------------------------------------------
-        z_blocks = z_blocks * expanded_mask
+        active_mask = active_mask.unsqueeze(-1)
 
-        return z_blocks, active_mask
+        #########################################
+        # Zero inactive blocks
+        #########################################
 
-    def forward(self, x, k):
-        """
-        Forward pass
+        z_blocks = z_blocks * active_mask
 
-        Pipeline
-        --------
-        Input embedding
-                ↓
-        Linear Encoder
-                ↓
-        Block Projection (Π_k)
-                ↓
-        Linear Decoder
-                ↓
-        Reconstructed embedding
-        """
+        return z_blocks, active_mask.squeeze(-1)
 
-        # --------------------------------------------------
+    def forward(self, x):
+
+        #########################################
         # Encode
-        # Shape : (B, latent_dim)
-        # --------------------------------------------------
+        #########################################
+
         z = self.W(x) + self.bias
 
-        # --------------------------------------------------
-        # Block sparse projection
-        # --------------------------------------------------
-        z_blocks, active_mask = self.block_projection(z, k)
+        #########################################
+        # Block Projection
+        #########################################
 
-        # --------------------------------------------------
-        # Flatten before decoder
-        # Shape : (B, latent_dim)
-        # --------------------------------------------------
-        B = z.shape[0]
-        z_flat = z_blocks.view(B, -1)
+        z_blocks, active_mask = self.block_projection(z)
 
-        # --------------------------------------------------
+        #########################################
+        # Flatten
+        #########################################
+
+        z = z_blocks.flatten(start_dim=1)
+
+        #########################################
         # Decode
-        # Shape : (B, input_dim)
-        # --------------------------------------------------
-        reconstruction = self.D(z_flat)
+        #########################################
+
+        reconstruction = self.D(z)
 
         return {
             "reconstruction": reconstruction,
+            "z": z,
             "z_blocks": z_blocks,
-            "z": z_flat,
             "active_mask": active_mask,
         }
-
 
 
 def build_model(
     input_dim=768,
     num_blocks=4096,
     block_size=4,
+    top_k=16,
 ):
+
     latent_dim = num_blocks * block_size
 
-    encoder = nn.Linear(input_dim, latent_dim, bias=True)
-    decoder = nn.Linear(latent_dim, input_dim, bias=False)
+    encoder = nn.Linear(
+        input_dim,
+        latent_dim,
+        bias=False,
+    )
+
+    decoder = nn.Linear(
+        latent_dim,
+        input_dim,
+        bias=False,
+    )
+
+    bias = nn.Parameter(
+        torch.zeros(latent_dim)
+    )
 
     model = Vanilla_BSF(
-        encoder=encoder,
-        decoder=decoder,
+        W=encoder,
+        D=decoder,
+        bias=bias,
         block_size=block_size,
+        top_k=top_k,
     )
 
     return model
-
