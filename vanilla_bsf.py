@@ -195,7 +195,7 @@ def build_model(
     encoder = nn.Linear(input_dim, latent_dim, bias=True)
     decoder = nn.Linear(latent_dim, input_dim, bias=False)
 
-    model = VanillaBSF(
+    model = Vanilla_BSF(
         encoder=encoder,
         decoder=decoder,
         block_size=block_size,
