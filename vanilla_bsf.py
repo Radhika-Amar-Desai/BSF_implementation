@@ -1,7 +1,7 @@
 import torch
+import torch.nn as nn
 
-
-class Vanilla_BSF:
+class Vanilla_BSF(nn.Module):
     """
     Vanilla Block Sparse Featurizer (BSF)
 
