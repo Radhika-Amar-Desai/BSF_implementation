@@ -16,3 +16,6 @@ The following components were implemented independently based on the methodology
 
 - **`vanilla_bsf.py`**
   - Implemented from scratch by following the algorithms and descriptions presented in the paper, without directly copying the reference implementation.
+  - What I missed:
+    - Block Normalization of D. This is required because we judge top-k block selection based on norm of block co-ordinates mentioned in z. since the final equation is z * D, the model while training has no incentive choosing (z/10) * (10 * Dg) or z * Dg, but such scaling affects our top-k block selection.
+    - Intialization trick. We need to initialize encoder as D. This is because when encoder is random, the norm of blocks may be tiny. In this architecture we select blocks according to norm and only the active blocks get updated during training, because of this, the blocks with small initial norm never get a chance to update themselves. Thus we initialize encoder as transpose of decoder and later encoder-decoder are untied. If decoder has meaningful concepts, encoder would discover it since it has same values as decoder and the operation W^T.x is equivalent to dot product with each element of W. This increases the chance of selection of a block.
