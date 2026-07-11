@@ -8,3 +8,6 @@
 
 # Model Files
 *.pth
+
+#pycache
+*__pycache__*
