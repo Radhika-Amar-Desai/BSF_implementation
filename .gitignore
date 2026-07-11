@@ -1,4 +1,10 @@
+# Images
 *.png
 *.jpg
 *.jpeg
+
+# Numpy Files
 *.npy
+
+# Model Files
+*.pth
