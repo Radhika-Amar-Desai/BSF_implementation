@@ -198,11 +198,8 @@ def build_model(
     with torch.no_grad():
 
         # Random decoder initialization
-        nn.init.normal_(
-            model.D.weight,
-            mean=0.0,
-            std=0.02,
-        )
+        model.D.weight.copy_(
+        torch.randn_like(model.D.weight))
 
         # Normalize decoder blocks
         model.normalize_decoder()
