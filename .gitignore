@@ -11,3 +11,6 @@
 
 #pycache
 *__pycache__*
+
+#zip files
+*.zip*
