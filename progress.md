@@ -10,7 +10,7 @@ The following components were adapted from the official Block Sparse Featurizer 
   - Based on the original implementation from the [Block Sparse Featurizer repository](https://github.com/goodfire-ai/block-sparse-featurizer).
   - Modified to extract DINOv2 activations from the provided `rabbit.npz` dataset instead of the original activation format.
 
-## Original Implementation and corrections
+## Implementation and Corrections
 
 The following components were implemented independently based on the methodology described in the research paper:
 
@@ -25,3 +25,7 @@ The following components were implemented independently based on the methodology
 - **`\notebooks`**
   - What I corrected:
     - Proper pre-processing of foundation model embeddings and scaling of embeddings. Embeddings need to be scaled to $ \sqrt{d} $ where $d = dimensions\_of\_foundation\_model$. This is needed so that random intialization operations work smoothly. Random initializations try to keep output variance roughly equal to 1 to present exploding and vanishing gradients and assume the input has a variance of $ \sqrt{d} $.
+
+- **`improved_grassmann_bsf.py`**
+  - What I corrected:
+    - Applying QR decomposition at every step instead of every 20 steps. In paper, applying QR decomposition at every 20 steps in mentioned but in the implementation QR decomposition is applied at every step and is differentiable.
