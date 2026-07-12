@@ -1,5 +1,51 @@
 # Vanilla BSF
 
+## Assumptions And Design
+
+Vanilla BSF is motivated by the hypothesis that **visual concepts are not isolated directions but low-dimensional manifolds embedded within the representation space of a foundation model (e.g., DINOv2/DINOv3).**
+
+An activation is assumed to be a sparse sum of contributions from a few active concepts: $x = \sum_{i \in S} m_i$ where each contribution \(m_i\) lies on a concept manifold that is approximated by a low-dimensional linear subspace.
+
+The model therefore learns:
+
+- **Decoder \(D\)**: Learns a dictionary of subspaces. Each decoder block \(D_g\) defines the **basis vectors** of one low-dimensional subspace in the original DINO representation space.
+- **Encoder \(W\)**: Learns the coordinates \(z_g\) of an activation within each learned subspace.
+- **Block Top-K Projection**: Activates only the \(k\) most relevant concept subspaces.
+- **Reconstruction**: Each concept contribution is reconstructed as $(m_g = z_g D_g)$, and the final representation is the sum of all active contributions.
+
+## Overall Pipeline
+
+```text
+DINO Patch Embedding (x)
+        │
+        ▼
+Linear Encoder (W, b)
+        │
+        ▼
+Latent Code (z)
+        │
+Partition into blocks
+        │
+        ▼
+Top-K Block Selection
+        │
+        ▼
+Coordinates of Active Concepts
+        │
+        ▼
+Decoder Blocks (D)
+(learned bases of concept subspaces)
+        │
+        ▼
+Per-concept Contributions
+    m_g = z_g D_g
+        │
+        ▼
+Sum of Active Contributions
+        │
+        ▼
+Reconstructed DINO Embedding
+
 ## Overall Pipeline
 
 ```text
