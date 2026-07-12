@@ -8,9 +8,15 @@ Image
 Foundation Model (DINOv2 / DINOv3)
     ↓
 Patch Activations
-(N patches × d-dimensional embedding)
+(N patches × d-dimensional embeddings)
     ↓
-Linear Encoder (W) And Bias Term (b)
+Pre-processing
+    • Subtract ImageNet per-position mean (POS_MEAN)
+    • Flatten all patch embeddings into a single matrix
+    • Compute dataset RMS norm
+    • Rescale activations so RMS norm = √d
+    ↓
+Linear Encoder (W) and Bias Term (b)
     ↓
 Latent Representation (z)
     ↓
@@ -28,7 +34,28 @@ Linear Decoder (D)
 Reconstructed Patch Activation
 ```
 
-The encoder maps every patch embedding into a high-dimensional latent space. The latent vector is partitioned into fixed-size blocks, and only the **Top-K blocks (based on their L2 norm)** are retained while the remaining blocks are zeroed out.
+Before training the Block Sparse Featurizer, the patch embeddings undergo a preprocessing stage. First, the **ImageNet per-position mean (`POS_MEAN`)** is subtracted from every patch embedding to remove the average positional bias learned by the vision transformer. The patch embeddings from all images are then flattened into a single dataset of activation vectors.
+
+Next, the dataset is **globally rescaled**. Let \(x_i \in \mathbb{R}^d\) denote the \(i^{\text{th}}\) patch embedding. The root mean squared (RMS) norm of the dataset is computed as
+
+$$
+\text{RMS}(x)
+=
+\sqrt{\frac{1}{N}\sum_{i=1}^{N}\|x_i\|_2^2},
+$$
+
+and every activation is transformed as
+
+$$
+x_i'
+=
+x_i\,
+\frac{\sqrt{d}}{\text{RMS}(x)}.
+$$
+
+This is **not** an L2 normalization of individual embeddings. Every activation is multiplied by the same global scaling factor, preserving the relative magnitudes between embeddings while ensuring that the dataset has an RMS norm of approximately \(\sqrt{d}\). Consequently, each feature dimension has approximately unit variance, matching the scale typically assumed by neural network initialization schemes and making optimization more stable.
+
+The encoder then maps every preprocessed patch embedding into a high-dimensional latent space. The latent vector is partitioned into fixed-size blocks, and only the **Top-K blocks (based on their L2 norm)** are retained while the remaining blocks are zeroed out.
 
 The decoder reconstructs the original patch embedding using only these active blocks. Since each decoder block is normalized to unit Frobenius norm, the block coefficients directly determine the contribution of each learned concept to the reconstruction.
 
@@ -38,7 +65,6 @@ After training, the primary outputs of interest are:
 - **Decoder blocks (`D`)** – represent the learned concept dictionary used to reconstruct the embedding space.
 
 Every reconstructed embedding can therefore be interpreted as a linear combination of the active concept manifolds.
-
 ---
 
 # Visualization Pipeline
