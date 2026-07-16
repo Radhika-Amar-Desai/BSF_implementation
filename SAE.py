@@ -34,7 +34,7 @@ class Sparse_Autoencoder(nn.Module):
         # Encode
         #########################################
 
-        z = self.W(x) + self.bias
+        z = torch.relu(self.W(x) + self.bias)
 
         #########################################
         # Decode
