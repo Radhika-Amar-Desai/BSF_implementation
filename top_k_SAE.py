@@ -2,125 +2,178 @@ import torch
 import torch.nn as nn
 
 
-class Top_k_SAE(nn.Module):
+class TopKSAE(nn.Module):
     """
-    Vanilla Block Sparse Featurizer
+    Top-k Sparse Autoencoder
 
-    Input
-    -----
-    x : (B, input_dim)
+    Encoder:
+        z = ReLU(Wx + b)
 
-    Output
+    Sparsification:
+        Keep only the k blocks with the largest L2 norms.
+
+    Decoder:
+        x_hat = Dz
+
+    Parameters
+    ----------
+    input_dim : int
+    num_blocks : int
+    block_size : int
+    top_k : int
+
+    Shapes
     ------
-    reconstruction : (B,input_dim)
-    z_blocks       : (B,G,b)
-    z              : (B,latent_dim)
-    active_mask    : (B,G)
+    x               : (B, input_dim)
+    z               : (B, latent_dim)
+    z_blocks        : (B, num_blocks, block_size)
+    active_mask     : (B, num_blocks)
+    reconstruction  : (B, input_dim)
     """
 
     def __init__(
         self,
-        W,
-        D,
-        bias,
-        block_size,
-        top_k,
+        input_dim=768,
+        num_blocks=4096,
+        block_size=1,
+        top_k=64,
     ):
         super().__init__()
 
-        self.W = W
-        self.D = D
-        self.bias = bias
-
-        self.block_size = 1
+        self.input_dim = input_dim
+        self.num_blocks = num_blocks
+        self.block_size = block_size
         self.top_k = top_k
 
-    def block_projection(self, z):
+        self.latent_dim = num_blocks * block_size
 
-        B, latent_dim = z.shape
-
-        assert latent_dim % self.block_size == 0
-
-        num_blocks = latent_dim // self.block_size
-
-        #########################################
-        # (B,latent) -> (B,G,b)
-        #########################################
-
-        z_blocks = z.view(B, num_blocks, self.block_size)
-
-        #########################################
-        # Block norms
-        # (B,G)
-        #########################################
-
-        block_norms = torch.norm(
-            z_blocks,
-            p=2,
-            dim=2,
+        self.encoder = nn.Linear(
+            input_dim,
+            self.latent_dim,
+            bias=False,
         )
 
-        #########################################
-        # Top-k blocks
-        #########################################
-
-        _, topk_indices = torch.topk(
-            block_norms,
-            self.top_k,
-            dim=1,
+        self.decoder = nn.Linear(
+            self.latent_dim,
+            input_dim,
+            bias=False,
         )
 
-        #########################################
-        # Binary support mask
-        #########################################
-
-        active_mask = torch.zeros_like(block_norms)
-
-        active_mask.scatter_(
-            1,
-            topk_indices,
-            1,
+        self.bias = nn.Parameter(
+            torch.zeros(self.latent_dim)
         )
 
-        #########################################
-        # Expand to (B,G,1)
-        #########################################
+        self.reset_parameters()
 
-        active_mask = active_mask.unsqueeze(-1)
+    ###########################################################
 
-        #########################################
-        # Zero inactive blocks
-        #########################################
+    def reset_parameters(self):
 
-        z_blocks = z_blocks * active_mask
+        nn.init.xavier_uniform_(self.encoder.weight)
+        nn.init.xavier_uniform_(self.decoder.weight)
 
-        return z_blocks, active_mask.squeeze(-1)
+    ###########################################################
 
-    def forward(self, x):
+    def atoms(self):
+        """
+        Returns decoder atoms.
 
-        #########################################
-        # Encode
-        #########################################
+        Shape:
+            (num_blocks, block_size, input_dim)
+        """
 
-        z = torch.relu(self.W(x) + self.bias)
+        return self.decoder.weight.T.view(
+            self.num_blocks,
+            self.block_size,
+            self.input_dim,
+        )
 
-        #########################################
-        # Block Projection
-        #########################################
+    ###########################################################
+
+    def encode(self, x):
+
+        z = torch.relu(
+            self.encoder(x) + self.bias
+        )
 
         z_blocks, active_mask = self.block_projection(z)
 
-        #########################################
-        # Flatten
-        #########################################
+        z = z_blocks.reshape(
+            x.shape[0],
+            self.latent_dim,
+        )
 
-        z = z_blocks.flatten(start_dim=1)
+        return z, z_blocks, active_mask
 
-        #########################################
-        # Decode
-        #########################################
+    ###########################################################
 
-        reconstruction = self.D(z)
+    def decode(self, z):
+
+        return self.decoder(z)
+
+    ###########################################################
+
+    def block_projection(self, z):
+
+        B = z.shape[0]
+
+        z_blocks = z.view(
+            B,
+            self.num_blocks,
+            self.block_size,
+        )
+
+        #######################################################
+        # Block norms
+        #######################################################
+
+        block_norms = torch.norm(
+            z_blocks,
+            dim=-1,
+        )
+
+        #######################################################
+        # Top-k blocks
+        #######################################################
+
+        _, top_idx = torch.topk(
+            block_norms,
+            k=self.top_k,
+            dim=1,
+        )
+
+        #######################################################
+        # Binary support mask
+        #######################################################
+
+        active_mask = torch.zeros_like(
+            block_norms
+        )
+
+        active_mask.scatter_(
+            1,
+            top_idx,
+            1.0,
+        )
+
+        #######################################################
+        # Zero inactive blocks
+        #######################################################
+
+        z_blocks = (
+            z_blocks
+            * active_mask.unsqueeze(-1)
+        )
+
+        return z_blocks, active_mask
+
+    ###########################################################
+
+    def forward(self, x):
+
+        z, z_blocks, active_mask = self.encode(x)
+
+        reconstruction = self.decode(z)
 
         return {
             "reconstruction": reconstruction,
@@ -130,37 +183,19 @@ class Top_k_SAE(nn.Module):
         }
 
 
+##############################################################
+
+
 def build_model(
     input_dim=768,
     num_blocks=4096,
-    block_size=4,
-    top_k=16,
+    block_size=1,
+    top_k=64,
 ):
 
-    latent_dim = num_blocks * block_size
-
-    encoder = nn.Linear(
-        input_dim,
-        latent_dim,
-        bias=False,
-    )
-
-    decoder = nn.Linear(
-        latent_dim,
-        input_dim,
-        bias=False,
-    )
-
-    bias = nn.Parameter(
-        torch.zeros(latent_dim)
-    )
-
-    model = Top_k_SAE(
-        W=encoder,
-        D=decoder,
-        bias=bias,
+    return TopKSAE(
+        input_dim=input_dim,
+        num_blocks=num_blocks,
         block_size=block_size,
         top_k=top_k,
     )
-
-    return model
