@@ -108,6 +108,207 @@ def overlay(ax, image, z_patch, atoms_g, mean, comps, colorize, grid):
     ax.imshow(rgba, extent=(0, w, h, 0), interpolation='bicubic')
     ax.set_xticks([]); ax.set_yticks([])
 
+def overlay_sae(ax, image, z_patch, atom, mean, comps,
+                colorize, grid):
+    """
+    Overlay for SAE.
+
+    atom : (d,)
+    z_patch : (P,)
+    """
+
+    #########################################
+    # Contribution vectors
+    #########################################
+
+    c = z_patch[:, None] * atom[None, :]
+
+    proj = (c - mean) @ comps.T
+
+    rgb = colorize(proj)
+
+    norm = np.linalg.norm(c, axis=1)
+
+    alpha = (
+        norm /
+        max(norm.max(), 1e-8)
+    ).clip(0, 1)
+
+    rgba = np.concatenate(
+        [rgb, alpha[:, None]],
+        axis=1,
+    ).reshape(grid, grid, 4)
+
+    h, w = image.shape[:2]
+
+    ax.imshow(image)
+
+    ax.imshow(
+        rgba,
+        extent=(0, w, h, 0),
+        interpolation="bicubic",
+    )
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+def plot_concepts_sae(
+    z,
+    atoms,
+    images,
+    concepts,
+    grid,
+    n_img=10,
+    ncol_img=5,
+    per_axis_rgb=False,
+    clip=98,
+    saturation=1.0,
+    max_points=5000,
+    point_size=4.0,
+    concept_gap=0.6,
+):
+
+    P = grid * grid
+
+    heat = np.abs(z)
+
+    zr = einops.rearrange(
+        z,
+        "(n p) g -> n p g",
+        p=P,
+    )
+
+    heat_img = einops.rearrange(
+        heat,
+        "(n p) g -> n p g",
+        p=P,
+    )
+
+    nrow_img = int(np.ceil(n_img / ncol_img))
+
+    mcol = 2
+    ncols = mcol + ncol_img
+
+    rows_per = nrow_img + 1
+
+    total_rows = rows_per * len(concepts) - 1
+
+    height_ratios = []
+
+    for r in range(len(concepts)):
+
+        height_ratios += [1] * nrow_img
+
+        if r < len(concepts) - 1:
+
+            height_ratios += [concept_gap]
+
+    gs = GridSpec(
+        total_rows,
+        ncols,
+        height_ratios=height_ratios,
+    )
+
+    fig = plt.figure(
+        figsize=(
+            1.7 * ncols,
+            1.7 * sum(height_ratios),
+        )
+    )
+
+    for r, g in enumerate(concepts):
+
+        r0 = r * rows_per
+
+        ax = fig.add_subplot(
+            gs[r0:r0 + nrow_img, :2],
+            projection="3d",
+        )
+
+        idx = np.where(
+            heat[:, g] > 1e-8
+        )[0]
+
+        if len(idx) < 8:
+
+            ax.set_axis_off()
+
+            continue
+
+        sub = (
+            idx
+            if len(idx) <= max_points
+            else np.random.choice(
+                idx,
+                max_points,
+                replace=False,
+            )
+        )
+
+        ###################################
+        # Contribution vectors
+        ###################################
+
+        c = (
+            z[sub, g][:, None]
+            * atoms[g][None, :]
+        )
+
+        mean, comps = pca_fit(c)
+
+        proj = (c - mean) @ comps.T
+
+        proj = radial_clip(
+            proj,
+            clip,
+        )
+
+        colorize = make_colorize(
+            proj,
+            per_axis_rgb,
+            saturation,
+        )
+
+        manifold_ax(
+            ax,
+            proj,
+            colorize(proj),
+            point_size,
+        )
+
+        ###################################
+        # Top images
+        ###################################
+
+        top_imgs = np.argsort(
+            -(heat_img[:, :, g] ** 2).sum(1)
+        )[:n_img]
+
+        for j, ii in enumerate(top_imgs):
+
+            ax2 = fig.add_subplot(
+                gs[
+                    r0 + j // ncol_img,
+                    2 + j % ncol_img,
+                ]
+            )
+
+            overlay_sae(
+                ax2,
+                images[ii],
+                zr[ii, :, g],
+                atoms[g],
+                mean,
+                comps,
+                colorize,
+                grid,
+            )
+
+    fig.tight_layout()
+
+    return fig
+
 
 def plot_concepts(z, atoms, images, concepts, grid, n_img=10, ncol_img=5,
                   per_axis_rgb=False, clip=98.0, saturation=1.0,
