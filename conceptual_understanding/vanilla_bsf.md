@@ -15,7 +15,7 @@ The model therefore learns:
 
 ## Overall Pipeline
 
-```text
+````text
 DINO Patch Embedding (x)
         │
         ▼
@@ -78,7 +78,7 @@ Linear Decoder (D)
 (Block-normalized: each decoder block has unit Frobenius norm)
     ↓
 Reconstructed Patch Activation
-```
+````
 
 Before training the Block Sparse Featurizer, the patch embeddings undergo a preprocessing stage. First, the **ImageNet per-position mean (`POS_MEAN`)** is subtracted from every patch embedding to remove the average positional bias learned by the vision transformer. The patch embeddings from all images are then flattened into a single dataset of activation vectors.
 
@@ -110,8 +110,7 @@ After training, the primary outputs of interest are:
 - **Latent block activations (`z_blocks`)** – indicate which concepts are active for each patch.
 - **Decoder blocks (`D`)** – represent the learned concept dictionary used to reconstruct the embedding space.
 
-Every reconstructed embedding can therefore be interpreted as a linear combination of the active concept manifolds.
----
+## Every reconstructed embedding can therefore be interpreted as a linear combination of the active concept manifolds.
 
 # Visualization Pipeline
 
@@ -169,5 +168,5 @@ The heatmap therefore shows **where the concept appears within an image**, while
 
 The two visualizations answer complementary questions:
 
-- **3D Manifold:** *How does a learned concept vary across the dataset?*
-- **Heatmap Overlay:** *Where does that concept appear in an image, and which semantic variation is present at each patch?*
+- **3D Manifold:** _How does a learned concept vary across the dataset?_
+- **Heatmap Overlay:** _Where does that concept appear in an image, and which semantic variation is present at each patch?_
