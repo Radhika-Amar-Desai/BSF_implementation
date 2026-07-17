@@ -79,7 +79,3 @@ The repository includes:
 ## Checkpoints
 
 Pretrained checkpoints for several models are provided in the `model_checkpoints/` directory.
-
-## License
-
-This repository is intended for research and educational purposes.
