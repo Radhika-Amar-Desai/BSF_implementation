@@ -27,3 +27,22 @@ We take ImageNet1-k dataset and obtain patch-wise Dino-v3 activations. The pipel
 * Dirichlet likes gradual, small changes. A change of 0.1 10 times has a DE of 0.1 while a change of 1 has a DE of 1.
 
 * DE is particularly harsh towards sudden spikes and favours gradual transitions throughout the activation map.
+
+## Linear Probing
+
+### Classification Pipeline
+
+* Image → DINO-V3 → Patch activations → BSF applied independently to each patch → Patch latent vectors $z$ → Element-wise max-absolute pooling across all patches, i.e., $z_{\text{image},j}=\max_p |z_{p,j}|$ → Image-level latent vector → Train a linear probe for image classification → Measure test accuracy / F1 score.
+
+### Segmentation Pipeline
+
+* Image → DINO-V3 → Patch activations → BSF applied independently to each patch → Patch latent vectors $z$ → Train a linear probe on each patch latent vector independently → Predict the semantic class for each patch → Measure segmentation performance (e.g., mIoU).
+
+
+## Cosine probe recovery
+
+* Take the trained linear probe ($w_{raw}$) -> get projection on each block -> measure cosine of angle between $w_{raw}$ and projection on each block -> select the maximum cosine angle.
+
+* Ceiling experiment a real activation from dino is taken and passed through the above pipeline to get a ceiling value for cosine angle.
+
+* Reason for experiment: we want to see where the probe comes from one block since blocks are supposed to be semantic concept's subspaces.
